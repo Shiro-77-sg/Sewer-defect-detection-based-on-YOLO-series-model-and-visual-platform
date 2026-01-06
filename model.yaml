@@ -1,0 +1,84 @@
+# Ultralytics YOLO 🚀, GPL-3.0 license
+# MCFN-YOLO model configuration
+
+# Parameters
+nc: 6  # number of classes
+scales: # model compound scaling constants, i.e. 'model=yolov8s.yaml'
+  s: [0.33, 0.50, 1024]
+
+# Backbone (Updated with MCFN)
+backbone:
+  # [from, repeats, module, args]
+  - [-1, 1, Conv, [64, 3, 2]]  # 0-P1/2
+  - [-1, 1, Conv, [128, 3, 2]] # 1-P2/4
+  - [-1, 3, MCFN, [128, True]] # 2 (Replaces C2f) - Feature P2 (160x160)
+  - [-1, 1, Conv, [256, 3, 2]] # 3-P3/8
+  - [-1, 6, MCFN, [256, True]] # 4 (Replaces C2f) - Feature P3 (80x80)
+  - [-1, 1, Conv, [512, 3, 2]] # 5-P4/16
+  - [-1, 6, MCFN, [512, True]] # 6 (Replaces C2f) - Feature P4 (40x40)
+  - [-1, 1, Conv, [1024, 3, 2]] # 7-P5/32
+  - [-1, 3, MCFN, [1024, True]] # 8 (Replaces C2f) - Feature P5 (20x20)
+  - [-1, 1, SPPF, [1024, 5]]    # 9
+
+# Neck (FC-PAN + EMA)
+# Fully Connected connections
+head:
+  # Pre-process Backbone Features with EMA
+  # P5 Processing
+  - [9, 1, Conv, [256, 1, 1]]   # 10
+  - [-1, 1, EMA, [256]]         # 11 --> P5_EMA
+
+  # P4 Processing
+  - [6, 1, Conv, [256, 1, 1]]   # 12
+  - [-1, 1, EMA, [256]]         # 13 --> P4_EMA
+
+  # P3 Processing
+  - [4, 1, Conv, [256, 1, 1]]   # 14
+  - [-1, 1, EMA, [256]]         # 15 --> P3_EMA
+
+  # P2 Processing
+  - [2, 1, Conv, [256, 1, 1]]   # 16
+  - [-1, 1, EMA, [256]]         # 17 --> P2_EMA
+
+  # Fully Connected Top-Down
+
+  # P5_new
+  - [13, 1, Conv, [256, 3, 2]]    # 18 P4 ↓2 → P5
+  - [15, 1, Conv, [256, 3, 4]]    # 19 P3 ↓4 → P5
+  - [17, 1, Conv, [256, 3, 8]]    # 20 P2 ↓8 → P5
+  - [[11, 18, 19, 20], 1, Concat, [1]]  # 21
+  - [-1, 3, C2f, [1024]]           # 22 P5_new
+
+  # P4_new
+  - [22, 1, Upsample, [None, 2, 'nearest']]  # 23
+  - [15, 1, Conv, [256, 3, 2]]                # 24 P3 ↓2
+  - [17, 1, Conv, [256, 3, 4]]                # 25 P2 ↓4
+  - [[13, 23, 24, 25], 1, Concat, [1]]        # 26
+  - [-1, 3, C2f, [512]]                       # 27 P4_new
+
+  # P3_new
+  - [27, 1, Upsample, [None, 2, 'nearest']]   # 28
+  - [17, 1, Conv, [256, 3, 2]]                # 29 P2 ↓2
+  - [[15, 28, 29], 1, Concat, [1]]            # 30
+  - [-1, 3, C2f, [256]]                       # 31 P3_new
+
+  # P2_new
+  - [31, 1, Upsample, [None, 2, 'nearest']]   # 32
+  - [[17, 32], 1, Concat, [1]]                # 33
+  - [-1, 3, C2f, [256]]                       # 34 P2_new
+
+  # Bottom-Up PAN
+  - [34, 1, Conv, [256, 3, 2]]                 # 35
+  - [[35, 31], 1, Concat, [1]]                 # 36
+  - [-1, 3, C2f, [256]]                        # 37 OUT_P3
+
+  - [37, 1, Conv, [256, 3, 2]]                 # 38
+  - [[38, 27], 1, Concat, [1]]                 # 39
+  - [-1, 3, C2f, [256]]                        # 40 OUT_P4
+
+  - [40, 1, Conv, [256, 3, 2]]                 # 41
+  - [[41, 22], 1, Concat, [1]]                 # 42
+  - [-1, 3, C2f, [256]]                        # 43 OUT_P5
+
+  # Detection Head
+  - [[34, 37, 40, 43], 1, ASADetect, [nc]]     # 44

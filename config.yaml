@@ -1,0 +1,11 @@
+train: D:/Python/code/pythonProject/yolo/data/train
+val: D:/Python/code/pythonProject/yolo/data/val
+test: D:/Python/code/pythonProject/yolo/data/test
+nc: 6
+names: 
+  0: Deformation
+  1: Obstacle
+  2: Rupture
+  3: Disconnect
+  4: Misalignment
+  5: Deposition
